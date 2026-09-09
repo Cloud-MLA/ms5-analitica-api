@@ -1,0 +1,77 @@
+openapi: 3.0.3
+info:
+  title: MS5 - Analitico
+  version: 0.1.0
+  description: |
+    Endpoints analiticos sobre el data lake del aeropuerto. Cada endpoint
+    ejecuta una consulta Athena predefinida (o lee una vista) contra el
+    catalogo Glue `aeropuerto_lake` y devuelve el resultado.
+
+    Este archivo es el **contrato de referencia** para el equipo (contract-first,
+    tarea BE-TX-03).
+
+servers:
+  - url: https://<api-gateway>/api/analitica
+    description: API Gateway (produccion)
+  - url: http://localhost:8005/api/analitica
+    description: Local
+
+paths:
+  /analitica/recursos-mas-fallas:
+    get:
+      summary: Recurso con mas incidencias en los ultimos N dias (Q1)
+      operationId: getRecursosMasFallas
+      parameters:
+        - name: dias
+          in: query
+          schema:
+            type: integer
+            default: 7
+            minimum: 1
+      responses:
+        '200': { description: Ranking }
+        '502': { description: ATHENA_QUERY_ERROR (catalogo no listo) }
+        '501': { description: No implementado (scaffold) }
+
+  /analitica/retraso-promedio:
+    get:
+      summary: Retraso medio (minutos) por tipo de vuelo (Q2)
+      operationId: getRetrasoPromedio
+      parameters:
+        - name: tipo
+          in: query
+          schema:
+            type: string
+            enum: [Nacional, Internacional]
+            default: Internacional
+      responses:
+        '200': { description: Promedio en minutos }
+        '502': { description: ATHENA_QUERY_ERROR }
+
+  /analitica/incidencias-combustible-por-aerolinea:
+    get:
+      summary: Ranking de aerolineas por incidencias Falta_Combustible (Q3)
+      operationId: getIncidenciasCombustible
+      responses:
+        '200': { description: Ranking por aerolinea }
+
+  /analitica/recaudacion-tuua-por-categoria:
+    get:
+      summary: Recaudacion estimada TUUA por categoria migratoria (vista)
+      operationId: getRecaudacionTuua
+      responses:
+        '200': { description: Monto por categoria }
+
+  /analitica/vuelos-hora-punta-retrasados:
+    get:
+      summary: Porcentaje de vuelos hora punta retrasados (vista)
+      operationId: getVuelosHoraPunta
+      responses:
+        '200': { description: Porcentajes }
+
+  /health:
+    get:
+      summary: Estado propio
+      operationId: getHealth
+      responses:
+        '200': { description: Servicio operativo }
