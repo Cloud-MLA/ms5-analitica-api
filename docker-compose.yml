@@ -1,0 +1,17 @@
+# docker-compose solo para desarrollo local del propio MS5.
+# En produccion, este servicio se levanta desde aeropuerto-infra-deploy
+# junto con MS1/MS2/MS3/MS4 detras del balanceador privado.
+#
+# MS5 depende de Athena (AWS Managed) — en local usa las credenciales
+# temporales del Learner Lab (AWS_ACCESS_KEY_ID/SECRET/SESSION_TOKEN
+# en tu .env local).
+
+services:
+  ms5:
+    build: .
+    container_name: ms5-analitica-api
+    ports:
+      - "8005:8005"
+    env_file:
+      - .env
+    restart: unless-stopped
