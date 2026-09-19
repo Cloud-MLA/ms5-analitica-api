@@ -1,72 +1,106 @@
-# ms5-analitica-api
-MS5 — Analítico · Python + FastAPI + boto3 → Athena
+# ms5-analitica-api · v1.0
 
-Parte del Proyecto Parcial CS2032 — Cloud Computing (2026-2).
-Contexto y arquitectura: [`cloud-computing-proyecto`](https://github.com/btoroled/cloud-computing-proyecto) ·
-Plan de tareas: [`plan/backend.md` §8](https://github.com/btoroled/cloud-computing-proyecto/blob/main/docs/plan/backend.md) ·
-Dueño: Fabricio.
+**MS5 — Analítico.** Microservicio Python + FastAPI + `boto3` que ejecuta las **5 consultas de negocio (Q1–Q5)** contra el data lake `s3://mla-aeropuerto-lake/` vía **AWS Athena** (catálogo Glue `aeropuerto_lake`).
 
-> Depende de Data Science: bucket S3 + catálogo Glue con datos. Ver
-> [`plan/data-science.md`](https://github.com/btoroled/cloud-computing-proyecto/blob/main/docs/plan/data-science.md).
+Parte del Proyecto Parcial CS2032 — Cloud Computing (UTEC 2026-2).
+[`cloud-computing-proyecto`](https://github.com/btoroled/cloud-computing-proyecto) ·
+[`plan/hito2.md §2.6`](https://github.com/btoroled/cloud-computing-proyecto/blob/main/docs/plan/hito2.md#26-ms5--analítico--python--fastapi--boto3--athena-fabricio) ·
+Dueño: **Fabricio**.
 
-## Estado (MS5-01 ✅ · MS5-02 ✅ · MS5-03..07 ✅ · MS5-08 ✅)
+> **Depende de Data Science:** requiere el catálogo Glue con las tablas creadas por la ingesta (DS-06/07/08 → DS-09/10 del [plan de DS](https://github.com/btoroled/cloud-computing-proyecto/blob/main/docs/plan/data-science.md)).
 
-Los 5 endpoints analíticos ejecutan queries reales contra Athena (`aeropuerto_lake`).
+---
 
-- **MS5-02:** `AthenaClient` con `start_query_execution` → poll `get_query_execution` hasta terminal → `get_query_results` con conversión de tipos + cache SHA-256 con TTL. Errores mapeados a `AthenaQueryError` → HTTP 502.
-- **MS5-03..07:** los 5 endpoints portan las queries validadas en Postgres local (repo `aeropuerto-data-science/athena/queries/`) con la sintaxis Athena (`date_diff`, `approx_percentile`, `CAST AS DECIMAL`).
-- **MS5-08:** 16 tests con `MagicMock` de boto3 — no requieren AWS para desarrollar.
+## Endpoints analíticos
 
-Ya trae (base de plantilla, BE-TX-02): `.editorconfig`, `.env.example`, `.github/workflows/build-push-ghcr.yml` (el `.gitignore` de Python ya existía). Fuente: [plantilla común](https://github.com/Cloud-MLA/aeropuerto-infra-deploy/tree/main/plantilla).
+Base path: `/api/analitica`.
 
-Añadido en el scaffold (MS5-01):
-- `app/main.py` — FastAPI 0.115 con Swagger en `/docs`.
-- `app/config.py` — `pydantic-settings`, config Athena por env.
-- `app/services/athena.py` — stub del cliente Athena (interfaz `execute_query`, cache TTL, mapeo `ATHENA_QUERY_ERROR → 502` — se llena en MS5-02).
-- `app/routers/health.py` — `GET /health`.
-- `app/routers/analitica.py` — 5 endpoints stub (`501`) con parámetros y referencia a cada Q/vista.
-- `Dockerfile` multi-stage, no-root, `HEALTHCHECK` nativo.
-- `docker-compose.yml` para dev local.
-- `openapi.yaml` borrador (BE-TX-03).
-- `tests/test_health.py` — 7 asserts que pasan.
+| Método | Ruta | Query Athena | Parámetros |
+|---|---|---|---|
+| `GET` | `/health` | — | — |
+| `GET` | `/api/analitica/recursos-mas-fallas` | **Q1** — recurso con más incidencias | `?dias=N` (1–365) |
+| `GET` | `/api/analitica/retraso-promedio` | **Q2** — retraso medio por tipo | `?tipo=Nacional\|Internacional` |
+| `GET` | `/api/analitica/incidencias-combustible-por-aerolinea` | **Q3** — ranking Falta_Combustible | — |
+| `GET` | `/api/analitica/recaudacion-tuua-por-categoria` | **Q4** — recaudación TUUA (vista `vw_recaudacion_tuua`) | — |
+| `GET` | `/api/analitica/vuelos-hora-punta-retrasados` | **Q5** — % retrasos hora pico (vista `vw_retrasos_hora_punta`) | — |
+| `GET` | `/docs` · `/openapi.json` | — | — |
+
+Las 5 queries SQL viven en [`app/services/queries.py`](app/services/queries.py) — portadas de [`aeropuerto-data-science/athena/queries/*.sql`](https://github.com/Cloud-MLA/aeropuerto-data-science/tree/main/athena/queries) con la sintaxis Athena/Trino.
+
+## Ejemplo `curl`
+
+```bash
+# Q1 — top 10 recursos con más fallas en la última semana
+curl https://<api-gateway>/api/analitica/recursos-mas-fallas?dias=7
+
+# Q3 — ranking de aerolíneas por incidencias de combustible
+curl https://<api-gateway>/api/analitica/incidencias-combustible-por-aerolinea
+```
+
+Respuesta (recortada):
+
+```json
+{
+  "query": "Q3",
+  "count": 24,
+  "rows": [
+    {"ruc": "20100000001", "aerolinea": "LATAM Airlines Peru", "alianza": "Ninguna",
+     "total_vuelos": 2704, "vuelos_afectados": 2410, "tasa_por_1000_vuelos": 891.27},
+    {"ruc": "20100000006", "aerolinea": "Copa Airlines", "alianza": "Star Alliance",
+     "total_vuelos": 2604, "vuelos_afectados": 2341, "tasa_por_1000_vuelos": 899.00}
+  ]
+}
+```
+
+## Errores (contrato común)
+
+Si Athena falla (catálogo no listo, workgroup mal configurado, query con error de sintaxis), MS5 devuelve **502**:
+
+```json
+{
+  "detail": {
+    "error": "ATHENA_QUERY_ERROR",
+    "message": "Athena query xxx FAILED: Table aeropuerto_lake.vuelo does not exist"
+  }
+}
+```
+
+Parámetros inválidos (`?dias=999`, `?tipo=Cualquiera`) devuelven **422** con detalle Pydantic.
+
+---
 
 ## Correr localmente
 
-Requiere credenciales AWS temporales del Learner Lab en el `.env` local:
+Requiere credenciales AWS temporales del Learner Lab en el `.env` local (Athena es un servicio managed — no se levanta local).
 
 ```bash
 python -m venv .venv
-.venv\Scripts\activate       # Windows
-# source .venv/bin/activate  # Linux/Mac
+.venv\Scripts\activate           # Windows
+# source .venv/bin/activate      # Linux/Mac
 pip install -r requirements.txt
-copy .env.example .env       # Windows (o cp en Linux)
-# Editar .env: pegar AWS_ACCESS_KEY_ID / SECRET / SESSION_TOKEN del laboratorio.
+copy .env.example .env            # Windows (o cp)
+# Editar .env: pegar AWS_ACCESS_KEY_ID / SECRET / SESSION_TOKEN del laboratorio
 uvicorn app.main:app --reload --port 8005
 ```
 
 Abre http://localhost:8005/docs.
 
-## Correr con Docker
+**Con Docker:**
 
 ```bash
 docker compose up --build
 ```
 
-## Correr tras corte de sesión del Learner Lab (<15 min)
+**Correr tras corte de sesión del Learner Lab** (<15 min):
 
 ```bash
-git pull                                  # trae imagen actualizada
-docker compose pull && docker compose up  # imagen ya publicada en GHCR
+# Pegar credenciales nuevas en .env y reiniciar el contenedor
+docker compose restart ms5
 ```
 
-Como el Learner Lab rota credenciales al reanudar, pega las nuevas en `.env` y reinicia el contenedor.
+En EC2 con Learner Lab, boto3 toma las credenciales del `LabInstanceProfile` automáticamente — **no** hay que pasar claves en `.env`.
 
-## Convenciones
-
-- **Puerto interno:** `8005`.
-- **Errores:** [contrato común](https://github.com/btoroled/cloud-computing-proyecto/blob/main/docs/contratos/errores.md)
-  (`ATHENA_QUERY_ERROR` → 502 si el catálogo no está listo).
-- **Imagen:** `git tag vX.Y && git push --tags` → `ghcr.io/cloud-mla/ms5-analitica-api:vX.Y`.
+---
 
 ## Configuración (env vars)
 
@@ -83,19 +117,58 @@ Ver `.env.example`.
 | `LOG_LEVEL` | `info` | `debug`/`info`/`warning`/`error` |
 | `ENV` | `local` | Nombre del entorno |
 
-## Endpoints
+---
 
-Base path de negocio: `/api/analitica`.
+## Arquitectura interna
 
-| Método | Ruta | Consulta Athena | Estado |
-|---|---|---|---|
-| GET | `/health` | — | ✅ |
-| GET | `/analitica/recursos-mas-fallas?dias=` | Q1 | ⏳ MS5-03 (F2) |
-| GET | `/analitica/retraso-promedio?tipo=` | Q2 | ⏳ MS5-04 (F2) |
-| GET | `/analitica/incidencias-combustible-por-aerolinea` | Q3 | ⏳ MS5-05 (F2) |
-| GET | `/analitica/recaudacion-tuua-por-categoria` | vista `vw_recaudacion_tuua` | ⏳ MS5-06 (F2) |
-| GET | `/analitica/vuelos-hora-punta-retrasados` | vista `vw_retrasos_hora_punta` | ⏳ MS5-07 (F2) |
+```
+app/
+├── main.py                     FastAPI 0.115
+├── config.py                   pydantic-settings (Athena config por env)
+├── services/
+│   ├── athena.py               AthenaClient real (start → poll → results + cache SHA + TTL)
+│   └── queries.py              Las 5 SQL Q1-Q5 en sintaxis Athena/Trino
+└── routers/
+    ├── health.py               /health
+    └── analitica.py            Los 5 endpoints Q1-Q5
+tests/                          16 tests con MagicMock boto3 (no requieren AWS)
+```
 
-Swagger-UI en `/docs` · OpenAPI JSON en `/openapi.json`.
+## Decisiones técnicas
+
+- **`boto3.client("athena")` lazy** — instanciado en la primera query, no al arrancar. Permite tests sin AWS y arranque incluso sin credenciales.
+- **Poll síncrono en `asyncio.to_thread`** — boto3 no es async; usarlo directo bloquea el event loop de FastAPI. Con `to_thread` lo movemos a un threadpool.
+- **Cache por SHA-256 del SQL** — el mismo `?dias=7` no consulta Athena dos veces en 5 min. TTL configurable.
+- **Validación de parámetros con Pydantic `Literal` + `Query(ge, le)`** — el usuario no puede inyectar SQL. `dias` se cast a int y se valida rango; `tipo` es enum estricto.
+- **`ATHENA_QUERY_ERROR → 502`** siguiendo el [contrato común de errores](https://github.com/btoroled/cloud-computing-proyecto/blob/main/docs/contratos/errores.md).
+
+---
+
+## Tests
+
+```bash
+pytest -q
+```
+
+16 tests · 2 seg. Con `MagicMock` de boto3 — **no requieren AWS**. Cubren:
+
+- **AthenaClient:** query exitosa → filas tipadas, FAILED → `AthenaQueryError`, timeout, cache TTL, cache no cruza entre queries distintas, NULL de Athena → `None`.
+- **Los 5 endpoints:** 200 con datos mockeados de Q1-Q5, validación 422 de params fuera de rango, 502 si Athena falla.
+
+---
+
+## Publicación de imagen
+
+`git tag v1.0` + `git push --tags` dispara [`build-push-ghcr.yml`](.github/workflows/build-push-ghcr.yml) → publica `ghcr.io/cloud-mla/ms5-analitica-api:v1.0` y `:latest`.
+
+En producción, `compose/vm-prod/docker-compose.yml` del repo [`aeropuerto-infra-deploy`](https://github.com/Cloud-MLA/aeropuerto-infra-deploy) hace `docker compose pull && up`.
+
+---
+
+## Convenciones del proyecto
+
+- **Puerto interno:** `8005`.
+- **Errores:** [contrato común](https://github.com/btoroled/cloud-computing-proyecto/blob/main/docs/contratos/errores.md) (`ATHENA_QUERY_ERROR` → 502 si el catálogo no está listo).
+- **Imagen:** `git tag vX.Y && git push --tags` → `ghcr.io/cloud-mla/ms5-analitica-api:vX.Y`.
 
 Ver el [checklist personal de Fabricio](https://github.com/btoroled/cloud-computing-proyecto/blob/main/docs/plan/personas/fabricio.md) en el repo de docs.
