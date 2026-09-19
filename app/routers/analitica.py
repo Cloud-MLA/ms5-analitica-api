@@ -14,6 +14,30 @@ from app.services import queries
 router = APIRouter(prefix="/api/analitica", tags=["analitica"])
 
 
+# --- Ejemplos para OpenAPI/Swagger ---
+_EJ_Q1 = {
+    "query": "Q1", "params": {"dias": 7}, "count": 3,
+    "rows": [
+        {"recurso_id": 461, "tipo": "radar", "nombre_tecnico_locacion": "Radar Norte - Torre 23",
+         "incidencias_total": 59, "severidad_ponderada": 122, "incidencias_criticas": 5,
+         "incidencias_abiertas": 17, "pct_abiertas": 28.81, "tpr_minutos_promedio": 2297.1},
+    ],
+}
+_EJ_Q3 = {
+    "query": "Q3", "count": 2,
+    "rows": [
+        {"ruc": "20100000001", "aerolinea": "LATAM Airlines Peru", "alianza": "Ninguna",
+         "total_vuelos": 2704, "vuelos_afectados": 2410, "tasa_por_1000_vuelos": 891.27,
+         "pct_vuelos_afectados": 89.13},
+        {"ruc": "20100000006", "aerolinea": "Copa Airlines", "alianza": "Star Alliance",
+         "total_vuelos": 2604, "vuelos_afectados": 2341, "tasa_por_1000_vuelos": 899.0,
+         "pct_vuelos_afectados": 89.9},
+    ],
+}
+_EJ_502 = {"detail": {"error": "ATHENA_QUERY_ERROR",
+                       "message": "Athena query xxx FAILED: Table 'aeropuerto_lake.vuelo' does not exist"}}
+
+
 async def _run(sql: str) -> list[dict]:
     try:
         rows = await athena_client.execute_query(sql)
@@ -32,6 +56,10 @@ async def _run(sql: str) -> list[dict]:
         "Devuelve el top 10 de recursos con más incidencias en la ventana `dias`, "
         "con severidad ponderada, % abiertas y tiempo promedio de reparación."
     ),
+    responses={
+        200: {"content": {"application/json": {"example": _EJ_Q1}}},
+        502: {"content": {"application/json": {"example": _EJ_502}}},
+    },
 )
 async def recursos_mas_fallas(
     dias: int = Query(default=7, ge=1, le=365, description="Ventana en días (1-365)"),
@@ -65,6 +93,10 @@ async def retraso_promedio(
         "Cruza incidencias con vuelos afectados y aerolíneas. Incluye tasa por "
         "1000 vuelos (métrica comparable entre aerolíneas grandes y pequeñas)."
     ),
+    responses={
+        200: {"content": {"application/json": {"example": _EJ_Q3}}},
+        502: {"content": {"application/json": {"example": _EJ_502}}},
+    },
 )
 async def incidencias_combustible_por_aerolinea() -> dict:
     rows = await _run(queries.Q3_INCIDENCIAS_COMBUSTIBLE)

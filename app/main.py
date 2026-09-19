@@ -13,7 +13,7 @@ logging.basicConfig(
 
 app = FastAPI(
     title="MS5 — Analítico",
-    version="0.1.0",
+    version="1.0.0",
     description=(
         "Endpoints analíticos sobre el data lake del aeropuerto. Cada endpoint "
         "ejecuta una consulta Athena predefinida (o lee una vista) y devuelve el "
