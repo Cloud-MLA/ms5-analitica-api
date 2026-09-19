@@ -9,9 +9,13 @@ Dueño: Fabricio.
 > Depende de Data Science: bucket S3 + catálogo Glue con datos. Ver
 > [`plan/data-science.md`](https://github.com/btoroled/cloud-computing-proyecto/blob/main/docs/plan/data-science.md).
 
-## Estado (MS5-01 ✅)
+## Estado (MS5-01 ✅ · MS5-02 ✅ · MS5-03..07 ✅ · MS5-08 ✅)
 
-Scaffold operativo: `GET /health` responde, los 5 endpoints analíticos existen y devuelven `501` con la referencia a su query. La capa Athena (MS5-02) es un stub — se implementa en F1.
+Los 5 endpoints analíticos ejecutan queries reales contra Athena (`aeropuerto_lake`).
+
+- **MS5-02:** `AthenaClient` con `start_query_execution` → poll `get_query_execution` hasta terminal → `get_query_results` con conversión de tipos + cache SHA-256 con TTL. Errores mapeados a `AthenaQueryError` → HTTP 502.
+- **MS5-03..07:** los 5 endpoints portan las queries validadas en Postgres local (repo `aeropuerto-data-science/athena/queries/`) con la sintaxis Athena (`date_diff`, `approx_percentile`, `CAST AS DECIMAL`).
+- **MS5-08:** 16 tests con `MagicMock` de boto3 — no requieren AWS para desarrollar.
 
 Ya trae (base de plantilla, BE-TX-02): `.editorconfig`, `.env.example`, `.github/workflows/build-push-ghcr.yml` (el `.gitignore` de Python ya existía). Fuente: [plantilla común](https://github.com/Cloud-MLA/aeropuerto-infra-deploy/tree/main/plantilla).
 
