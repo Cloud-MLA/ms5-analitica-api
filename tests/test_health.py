@@ -1,4 +1,4 @@
-"""Smoke tests del scaffold. Corre con: pytest -q"""
+"""Smoke tests. Corre con: pytest -q"""
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -19,14 +19,15 @@ def test_openapi_disponible():
     assert body["info"]["title"] == "MS5 — Analítico"
 
 
-def test_analitica_endpoints_devuelven_501():
-    for path, tarea in [
-        ("/api/analitica/recursos-mas-fallas", "MS5-03"),
-        ("/api/analitica/retraso-promedio", "MS5-04"),
-        ("/api/analitica/incidencias-combustible-por-aerolinea", "MS5-05"),
-        ("/api/analitica/recaudacion-tuua-por-categoria", "MS5-06"),
-        ("/api/analitica/vuelos-hora-punta-retrasados", "MS5-07"),
-    ]:
-        response = client.get(path)
-        assert response.status_code == 501, path
-        assert response.json()["detail"]["tarea"] == tarea, path
+def test_los_5_endpoints_analiticos_estan_expuestos():
+    """Verifica que los 5 endpoints Q1-Q5 estén registrados en OpenAPI."""
+    body = client.get("/openapi.json").json()
+    paths = set(body["paths"].keys())
+    esperados = {
+        "/api/analitica/recursos-mas-fallas",
+        "/api/analitica/retraso-promedio",
+        "/api/analitica/incidencias-combustible-por-aerolinea",
+        "/api/analitica/recaudacion-tuua-por-categoria",
+        "/api/analitica/vuelos-hora-punta-retrasados",
+    }
+    assert esperados.issubset(paths), f"Faltan: {esperados - paths}"
