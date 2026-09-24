@@ -7,7 +7,8 @@ que ese repo documentó como `-- ATHENA:` en cada .sql:
 - `x::numeric` → `CAST(x AS DECIMAL)` (o `DOUBLE`)
 - `STDDEV_POP` → `stddev`
 - `NOW()` → `current_timestamp`
-- `TIMESTAMPTZ` → `TIMESTAMP` (Glue infiere del CSV)
+- Las fechas ISO 8601 de los CSV quedan como VARCHAR en Glue: se convierten
+  con `TRY(from_iso8601_timestamp(...))` antes de compararlas o restarlas.
 
 Las tablas viven en el catálogo Glue `aeropuerto_lake`. El crawler de Data
 Science (DS-09) crea una tabla por CSV con prefix `raw/msX/<tabla>/`, y
@@ -20,16 +21,19 @@ Parámetros:
 
 # Q1 — Recurso (manga/radar) con más incidencias en los últimos N días.
 Q1_RECURSOS_MAS_FALLAS = """
-WITH incidencias_ventana AS (
+WITH incidencias_tipadas AS (
     SELECT
         i.id             AS incidencia_id,
         i.gravedad,
-        i.fecha_reporte,
-        i.fecha_cierre,
+        TRY(from_iso8601_timestamp(i.fecha_reporte)) AS fecha_reporte,
+        TRY(from_iso8601_timestamp(i.fecha_cierre)) AS fecha_cierre,
         iar.id_recurso
     FROM incidencia i
     JOIN incidencia_afecta_recurso iar ON iar.id_incidencia = i.id
-    WHERE i.fecha_reporte > current_timestamp - INTERVAL '{dias}' DAY
+),
+incidencias_ventana AS (
+    SELECT * FROM incidencias_tipadas
+    WHERE fecha_reporte > current_timestamp - INTERVAL '{dias}' DAY
 )
 SELECT
     r.id                         AS recurso_id,
@@ -64,23 +68,31 @@ LIMIT 10
 
 # Q2 — Retraso promedio (min) de vuelos por tipo, con percentiles y franja horaria.
 Q2_RETRASO_PROMEDIO = """
-WITH retrasos AS (
+WITH vuelos_tipados AS (
     SELECT
         v.id,
         v.numero AS num_vuelo,
-        v.hora_programada,
         v.aerolinea_ruc,
-        CAST(date_diff('minute', v.hora_programada, v.hora_real) AS DOUBLE) AS retraso_min,
-        CASE CAST(EXTRACT(HOUR FROM v.hora_programada) AS INTEGER) / 6
+        TRY(from_iso8601_timestamp(v.hora_programada)) AS hora_programada,
+        TRY(from_iso8601_timestamp(v.hora_real)) AS hora_real
+    FROM vuelo v
+    WHERE v.tipo = '{tipo}'
+      AND v.estado IN ('Retrasado', 'Despegado', 'Aterrizado')
+),
+retrasos AS (
+    SELECT
+        id,
+        num_vuelo,
+        aerolinea_ruc,
+        CAST(date_diff('minute', hora_programada, hora_real) AS DOUBLE) AS retraso_min,
+        CASE CAST(EXTRACT(HOUR FROM hora_programada) AS INTEGER) / 6
              WHEN 0 THEN 'Madrugada (0-6)'
              WHEN 1 THEN 'Manana (6-12)'
              WHEN 2 THEN 'Tarde (12-18)'
              ELSE       'Noche (18-24)'
         END AS franja_horaria
-    FROM vuelo v
-    WHERE v.tipo = '{tipo}'
-      AND v.estado IN ('Retrasado', 'Despegado', 'Aterrizado')
-      AND v.hora_real IS NOT NULL
+    FROM vuelos_tipados
+    WHERE hora_programada IS NOT NULL AND hora_real IS NOT NULL
 )
 SELECT
     'GLOBAL' AS grupo,
@@ -188,28 +200,38 @@ ORDER BY recaudacion_soles DESC
 # Q5 — Porcentaje de vuelos en hora punta retrasados.
 # En Hito 2 esto va contra la vista `vw_retrasos_hora_punta` (DS-12).
 Q5_HORA_PUNTA = """
-WITH clasificados AS (
+WITH vuelos_tipados AS (
     SELECT
         v.id,
         v.tipo,
-        CAST(EXTRACT(HOUR FROM v.hora_programada) AS INTEGER) AS hora,
+        v.estado,
+        TRY(from_iso8601_timestamp(v.hora_programada)) AS hora_programada,
+        TRY(from_iso8601_timestamp(v.hora_real)) AS hora_real
+    FROM vuelo v
+    WHERE v.estado <> 'Cancelado'
+),
+clasificados AS (
+    SELECT
+        id,
+        tipo,
+        CAST(EXTRACT(HOUR FROM hora_programada) AS INTEGER) AS hora,
         CASE
-            WHEN CAST(EXTRACT(HOUR FROM v.hora_programada) AS INTEGER) BETWEEN 6  AND 8  THEN 'HORA PUNTA (06-09h)'
-            WHEN CAST(EXTRACT(HOUR FROM v.hora_programada) AS INTEGER) BETWEEN 18 AND 20 THEN 'HORA PUNTA (18-21h)'
+            WHEN CAST(EXTRACT(HOUR FROM hora_programada) AS INTEGER) BETWEEN 6  AND 8  THEN 'HORA PUNTA (06-09h)'
+            WHEN CAST(EXTRACT(HOUR FROM hora_programada) AS INTEGER) BETWEEN 18 AND 20 THEN 'HORA PUNTA (18-21h)'
             ELSE 'NO PUNTA'
         END AS franja,
         CASE
-            WHEN v.estado = 'Retrasado' THEN 1
-            WHEN v.hora_real IS NOT NULL
-                 AND date_diff('minute', v.hora_programada, v.hora_real) > 15 THEN 1
+            WHEN estado = 'Retrasado' THEN 1
+            WHEN hora_real IS NOT NULL
+                 AND date_diff('minute', hora_programada, hora_real) > 15 THEN 1
             ELSE 0
         END AS es_retrasado,
         CASE
-            WHEN v.hora_real IS NOT NULL
-            THEN CAST(date_diff('minute', v.hora_programada, v.hora_real) AS DOUBLE)
+            WHEN hora_real IS NOT NULL
+            THEN CAST(date_diff('minute', hora_programada, hora_real) AS DOUBLE)
         END AS retraso_min
-    FROM vuelo v
-    WHERE v.estado <> 'Cancelado'
+    FROM vuelos_tipados
+    WHERE hora_programada IS NOT NULL
 )
 SELECT
     franja,

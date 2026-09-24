@@ -150,7 +150,7 @@ tests/                          16 tests con MagicMock boto3 (no requieren AWS)
 pytest -q
 ```
 
-16 tests · 2 seg. Con `MagicMock` de boto3 — **no requieren AWS**. Cubren:
+17 tests · 2 seg. Con `MagicMock` de boto3 — **no requieren AWS**. Cubren:
 
 - **AthenaClient:** query exitosa → filas tipadas, FAILED → `AthenaQueryError`, timeout, cache TTL, cache no cruza entre queries distintas, NULL de Athena → `None`.
 - **Los 5 endpoints:** 200 con datos mockeados de Q1-Q5, validación 422 de params fuera de rango, 502 si Athena falla.
@@ -159,9 +159,9 @@ pytest -q
 
 ## Publicación de imagen
 
-`git tag v1.0` + `git push --tags` dispara [`build-push-ghcr.yml`](.github/workflows/build-push-ghcr.yml) → publica `ghcr.io/cloud-mla/ms5-analitica-api:v1.0` y `:latest`.
+Un merge en `main` dispara [`build-push-dockerhub.yml`](.github/workflows/build-push-dockerhub.yml) → publica `btoroled/ms5-analitica-api:latest` en Docker Hub. Los tags `vX.Y` también publican una versión etiquetada.
 
-En producción, `compose/vm-prod/docker-compose.yml` del repo [`aeropuerto-infra-deploy`](https://github.com/Cloud-MLA/aeropuerto-infra-deploy) hace `docker compose pull && up`.
+En producción, `compose/vm-prod/docker-compose.yml` del repo [`aeropuerto-infra-deploy`](https://github.com/Cloud-MLA/aeropuerto-infra-deploy) usa esa imagen. Tras publicar una nueva versión, hay que actualizar MS5 en ambas VM-PROD con `docker compose pull ms5 && docker compose up -d ms5` desde el directorio del compose (o mediante el procedimiento de despliegue automatizado del equipo).
 
 ---
 
@@ -169,6 +169,6 @@ En producción, `compose/vm-prod/docker-compose.yml` del repo [`aeropuerto-infra
 
 - **Puerto interno:** `8005`.
 - **Errores:** [contrato común](https://github.com/btoroled/cloud-computing-proyecto/blob/main/docs/contratos/errores.md) (`ATHENA_QUERY_ERROR` → 502 si el catálogo no está listo).
-- **Imagen:** `git tag vX.Y && git push --tags` → `ghcr.io/cloud-mla/ms5-analitica-api:vX.Y`.
+- **Imagen:** merge en `main` → `btoroled/ms5-analitica-api:latest`; tag `vX.Y` → imagen versionada.
 
 Ver el [checklist personal de Fabricio](https://github.com/btoroled/cloud-computing-proyecto/blob/main/docs/plan/personas/fabricio.md) en el repo de docs.
