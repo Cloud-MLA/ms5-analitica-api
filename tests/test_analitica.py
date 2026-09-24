@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.services import queries
 from app.services import athena as athena_module
 from app.services.athena import AthenaQueryError, athena_client
 
@@ -214,3 +215,17 @@ def test_endpoint_devuelve_502_si_athena_falla():
     body = r.json()
     assert body["detail"]["error"] == "ATHENA_QUERY_ERROR"
     assert "permission denied" in body["detail"]["message"]
+
+
+def test_queries_convierten_fechas_csv_antes_de_operar():
+    """Glue cataloga las fechas ISO 8601 del CSV como VARCHAR."""
+    q1 = queries.Q1_RECURSOS_MAS_FALLAS.format(dias=7)
+    q2 = queries.Q2_RETRASO_PROMEDIO.format(tipo="Internacional")
+    q5 = queries.Q5_HORA_PUNTA
+
+    assert "TRY(from_iso8601_timestamp(i.fecha_reporte))" in q1
+    assert "TRY(from_iso8601_timestamp(i.fecha_cierre))" in q1
+    assert "TRY(from_iso8601_timestamp(v.hora_programada))" in q2
+    assert "TRY(from_iso8601_timestamp(v.hora_real))" in q2
+    assert "TRY(from_iso8601_timestamp(v.hora_programada))" in q5
+    assert "TRY(from_iso8601_timestamp(v.hora_real))" in q5
